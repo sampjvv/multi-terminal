@@ -1,0 +1,20 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('pty', {
+  create: (id, cols, rows) => ipcRenderer.invoke('pty:create', { id, cols, rows }),
+  write: (id, data) => ipcRenderer.invoke('pty:write', { id, data }),
+  resize: (id, cols, rows) => ipcRenderer.invoke('pty:resize', { id, cols, rows }),
+  destroy: (id) => ipcRenderer.invoke('pty:destroy', { id }),
+  getCwd: (id) => ipcRenderer.invoke('pty:getCwd', { id }),
+  onData: (callback) => ipcRenderer.on('pty:data', (event, { id, data }) => callback(id, data)),
+  onExit: (callback) => ipcRenderer.on('pty:exit', (event, { id, exitCode }) => callback(id, exitCode)),
+});
+
+contextBridge.exposeInMainWorld('clipboardBridge', {
+  read: () => ipcRenderer.invoke('clipboard:read'),
+  write: (text) => ipcRenderer.invoke('clipboard:write', { text }),
+});
+
+contextBridge.exposeInMainWorld('themeBridge', {
+  setNativeTheme: (theme) => ipcRenderer.invoke('theme:set', { theme }),
+});
