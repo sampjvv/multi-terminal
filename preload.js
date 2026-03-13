@@ -18,3 +18,7 @@ contextBridge.exposeInMainWorld('clipboardBridge', {
 contextBridge.exposeInMainWorld('themeBridge', {
   setNativeTheme: (theme) => ipcRenderer.invoke('theme:set', { theme }),
 });
+
+contextBridge.exposeInMainWorld('windowControl', {
+  toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
+});

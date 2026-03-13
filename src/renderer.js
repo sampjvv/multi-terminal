@@ -1,14 +1,17 @@
 const { Terminal } = require('@xterm/xterm');
 const { FitAddon } = require('@xterm/addon-fit');
 
-const MAX_PANES = 6;
+const MAX_PANES = 16;
 const panes = new Map();
 let activeId = null;
 let nextId = 1;
-let currentTheme = 'dark';
+let currentTheme = localStorage.getItem('sptc-theme') || 'dark';
 let backtickPending = false;
 let backtickTimer = null;
 let backtickHeld = false;
+
+// Shift+1-6 produce these characters for panes 11-16
+const SHIFT_DIGIT_MAP = { '!': 11, '@': 12, '#': 13, '$': 14, '%': 15, '^': 16 };
 
 const grid = document.getElementById('terminal-grid');
 const countDisplay = document.getElementById('pane-count');
@@ -66,7 +69,11 @@ const themes = {
 
 function updateCount() {
   countDisplay.textContent = `${panes.size} / ${MAX_PANES}`;
-  grid.setAttribute('data-count', panes.size);
+  const count = panes.size;
+  const cols = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / cols) || 1;
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
 }
 
 function renumberPanes() {
@@ -126,7 +133,7 @@ async function addTerminal() {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'pane-close';
   closeBtn.innerHTML = '&#215;';
-  closeBtn.title = 'Close (Ctrl+Shift+W)';
+  closeBtn.title = 'Close (`+W)';
 
   header.appendChild(info);
   header.appendChild(closeBtn);
@@ -152,15 +159,22 @@ async function addTerminal() {
   terminal.loadAddon(fitAddon);
   terminal.open(container);
 
+  // Update path label when terminal title changes (set by prompt's OSC 0)
+  terminal.onTitleChange((title) => {
+    if (pathLabel && title) {
+      pathLabel.textContent = shortenPath(title);
+    }
+  });
+
   // Right-click context menu: copy selection or paste
   container.addEventListener('contextmenu', async (e) => {
     e.preventDefault();
     const selection = terminal.getSelection();
     if (selection) {
-      await window.clipboardBridge.write(selection);
+      await navigator.clipboard.writeText(selection);
       terminal.clearSelection();
     } else {
-      const text = await window.clipboardBridge.read();
+      const text = await navigator.clipboard.readText();
       if (text) {
         window.pty.write(id, text);
       }
@@ -175,11 +189,11 @@ async function addTerminal() {
     if (e.ctrlKey && e.shiftKey) {
       if (e.key === 'C') {
         const sel = terminal.getSelection();
-        if (sel) window.clipboardBridge.write(sel);
+        if (sel) navigator.clipboard.writeText(sel);
         return false;
       }
       if (e.key === 'V') {
-        window.clipboardBridge.read().then((text) => {
+        navigator.clipboard.readText().then((text) => {
           if (text) window.pty.write(id, text);
         });
         return false;
@@ -187,20 +201,25 @@ async function addTerminal() {
     }
 
     // Ctrl+C: copy if selection exists, otherwise let terminal handle (SIGINT)
-    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'c') {
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
       const sel = terminal.getSelection();
       if (sel) {
-        window.clipboardBridge.write(sel);
+        navigator.clipboard.writeText(sel);
         terminal.clearSelection();
         return false;
       }
     }
 
     // Ctrl+V: always paste
-    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'v') {
-      window.clipboardBridge.read().then((text) => {
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'v' || e.key === 'V')) {
+      navigator.clipboard.readText().then((text) => {
         if (text) window.pty.write(id, text);
       });
+      return false;
+    }
+
+    // F11: let document handler handle fullscreen toggle
+    if (e.key === 'F11') {
       return false;
     }
 
@@ -211,9 +230,17 @@ async function addTerminal() {
 
     // While backtick chord is pending, intercept second keys so xterm doesn't process them
     if (backtickPending) {
-      const k = e.key.toLowerCase();
-      if (k === 't' || k === 'w' || k === 'e' || (e.key >= '1' && e.key <= '6')) {
-        return false; // document keydown handles the chord
+      const k = e.key;
+      if (k === 't' || k === 'T' || k === 'w' || k === 'W' || k === 'e' || k === 'E') {
+        return false;
+      }
+      // 1-9 for panes 1-9, 0 for pane 10
+      if ((k >= '1' && k <= '9') || k === '0') {
+        return false;
+      }
+      // Shift+1-6 (!@#$%^) for panes 11-16
+      if (SHIFT_DIGIT_MAP[k] !== undefined) {
+        return false;
       }
     }
 
@@ -265,6 +292,10 @@ function removeTerminal(id) {
   const pane = panes.get(id);
   if (!pane) return;
 
+  // Find the position index before removing, so we can select the replacement
+  const keysBefore = [...panes.keys()];
+  const closedIndex = keysBefore.indexOf(id);
+
   window.pty.destroy(id);
   pane.terminal.dispose();
   pane.element.remove();
@@ -276,7 +307,9 @@ function removeTerminal(id) {
   if (activeId === id) {
     const remaining = [...panes.keys()];
     if (remaining.length > 0) {
-      setActive(remaining[remaining.length - 1]);
+      // Select the pane that now occupies the same position, or the last one if we closed the last
+      const newIndex = Math.min(closedIndex, remaining.length - 1);
+      setActive(remaining[newIndex]);
     } else {
       activeId = null;
     }
@@ -298,6 +331,7 @@ function fitAll() {
 
 function setTheme(theme) {
   currentTheme = theme;
+  localStorage.setItem('sptc-theme', theme);
   document.documentElement.setAttribute('data-theme', theme);
   for (const [, pane] of panes) {
     pane.terminal.options.theme = themes[theme];
@@ -310,17 +344,6 @@ window.pty.onData((id, data) => {
   const pane = panes.get(id);
   if (pane) {
     pane.terminal.write(data);
-
-    if (!pane._cwdUpdatePending) {
-      pane._cwdUpdatePending = true;
-      setTimeout(async () => {
-        pane._cwdUpdatePending = false;
-        const cwd = await window.pty.getCwd(id);
-        if (cwd && pane.pathLabel) {
-          pane.pathLabel.textContent = shortenPath(cwd) || cwd;
-        }
-      }, 2000);
-    }
   }
 });
 
@@ -330,6 +353,14 @@ window.pty.onExit((id, exitCode) => {
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
+  // F11: toggle fullscreen
+  if (e.key === 'F11') {
+    e.preventDefault();
+    window.windowControl.toggleFullscreen();
+    setTimeout(fitAll, 200);
+    return;
+  }
+
   // Ctrl+backtick: send literal backtick to active terminal
   if (e.key === '`' && e.ctrlKey && !e.altKey && !e.metaKey) {
     e.preventDefault();
@@ -352,6 +383,10 @@ document.addEventListener('keydown', (e) => {
 
   // While backtick is pending, handle second key
   if (backtickPending) {
+    // Ignore modifier-only keys (Shift, Ctrl, Alt, Meta) so they don't cancel the chord
+    if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') {
+      return;
+    }
     e.preventDefault();
     clearTimeout(backtickTimer);
     // Stay pending if backtick is still held, otherwise clear
@@ -365,8 +400,26 @@ document.addEventListener('keydown', (e) => {
       if (activeId) removeTerminal(activeId);
       return;
     }
-    if (e.key >= '1' && e.key <= '6') {
+    // 1-9 for panes 1-9
+    if (e.key >= '1' && e.key <= '9') {
       const idx = parseInt(e.key) - 1;
+      const ids = [...panes.keys()];
+      if (idx < ids.length) {
+        setActive(ids[idx]);
+      }
+      return;
+    }
+    // 0 for pane 10
+    if (e.key === '0') {
+      const ids = [...panes.keys()];
+      if (9 < ids.length) {
+        setActive(ids[9]);
+      }
+      return;
+    }
+    // Shift+1-6 (!@#$%^) for panes 11-16
+    if (SHIFT_DIGIT_MAP[e.key] !== undefined) {
+      const idx = SHIFT_DIGIT_MAP[e.key] - 1;
       const ids = [...panes.keys()];
       if (idx < ids.length) {
         setActive(ids[idx]);
@@ -401,6 +454,9 @@ window.addEventListener('resize', () => {
   clearTimeout(resizeTimeout);
   resizeTimeout = setTimeout(fitAll, 100);
 });
+
+// Apply persisted theme before first terminal
+setTheme(currentTheme);
 
 // Start with one terminal
 addTerminal();

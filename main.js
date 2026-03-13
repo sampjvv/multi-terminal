@@ -51,7 +51,10 @@ ipcMain.handle('pty:create', (event, { id, cols, rows }) => {
     }
   }
 
-  const ptyProcess = pty.spawn(shell, [], {
+  const ptyProcess = pty.spawn(shell, [
+    '-NoExit', '-Command',
+    'function prompt { $p = $PWD.Path; "$([char]27)]0;$p$([char]7)PS $p> " }'
+  ], {
     name: 'xterm-256color',
     cols: cols || 80,
     rows: rows || 24,
@@ -118,6 +121,13 @@ ipcMain.handle('theme:set', (event, { theme }) => {
   }
 });
 
+ipcMain.handle('window:toggleFullscreen', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  }
+});
+
+// pty:getCwd kept for compatibility but no longer polled — CWD comes via OSC 9;9
 ipcMain.handle('pty:getCwd', (event, { id }) => {
   const ptyProcess = ptys.get(id);
   if (ptyProcess) {
