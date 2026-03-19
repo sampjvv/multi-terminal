@@ -22,3 +22,5 @@ contextBridge.exposeInMainWorld('themeBridge', {
 contextBridge.exposeInMainWorld('windowControl', {
   toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
 });
+
+

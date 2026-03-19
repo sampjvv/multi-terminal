@@ -1,11 +1,11 @@
 {
-  "name": "sptc",
+  "name": "shu-cream",
   "version": "1.0.0",
   "description": "Multi-terminal app with auto-grid layout",
   "main": "main.js",
   "scripts": {
-    "build": "esbuild src/renderer.js --bundle --outfile=dist/renderer.js --platform=browser --format=iife",
-    "start": "npm run build && electron .",
+    "build": "esbuild src/renderer.js --bundle --outfile=dist/renderer.js --platform=browser --format=iife && cp node_modules/@xterm/xterm/css/xterm.css dist/xterm.css",
+    "start": "npm run build && node node_modules/node-pty/scripts/post-install.js && electron .",
     "dist": "npm run build && electron-builder --win"
   },
   "keywords": [],
@@ -14,27 +14,64 @@
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "electron": "^41.0.2",
     "node-pty": "^1.1.0"
   },
   "devDependencies": {
+    "electron": "^41.0.2",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.27.4"
   },
   "build": {
     "appId": "com.sptc.multi-terminal",
-    "productName": "SPTC",
+    "productName": "shu-cream",
     "win": {
-      "target": "portable"
+      "target": "nsis",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": true
     },
     "files": [
       "main.js",
       "preload.js",
       "index.html",
       "styles.css",
-      "dist/**",
-      "node_modules/@xterm/**"
+      "dist/renderer.js",
+      "dist/xterm.css",
+      "!dist/win-unpacked",
+      "!dist/win-unpacked/**/*",
+      "!dist/*.exe",
+      "!dist/*.blockmap",
+      "!dist/*.yml",
+      "!dist/*.yaml",
+      "!dist/*.txt",
+      "!node_modules/@xterm/**",
+      "!node_modules/node-pty/deps/**",
+      "!node_modules/node-pty/src/**",
+      "!node_modules/node-pty/scripts/**",
+      "!node_modules/node-pty/third_party/**",
+      "!node_modules/node-pty/prebuilds/**",
+      "!node_modules/node-pty/node-addon-api/**",
+      "!node_modules/node-pty/build/deps/**",
+      "!node_modules/node-pty/build/Release/obj/**",
+      "!node_modules/node-pty/build/*.vcxproj*",
+      "!node_modules/node-pty/build/Release/*.exp",
+      "!node_modules/node-pty/build/Release/*.iobj",
+      "!node_modules/node-pty/build/Release/*.ipdb",
+      "!node_modules/node-pty/build/Release/*.lib",
+      "!node_modules/node-addon-api/tools/**",
+      "!node_modules/node-addon-api/*.h",
+      "!node_modules/node-addon-api/*.gypi",
+      "!node_modules/node-addon-api/*.gyp",
+      "!node_modules/node-addon-api/*.c"
     ],
-    "asar": false
+    "afterPack": "./scripts/afterPack.js",
+    "asarUnpack": [
+      "node_modules/node-pty/build/Release/*.node",
+      "node_modules/node-pty/build/Release/winpty-agent.exe",
+      "node_modules/node-pty/build/Release/winpty.dll",
+      "node_modules/node-pty/build/Release/conpty/conpty.dll",
+      "node_modules/node-pty/build/Release/conpty/OpenConsole.exe"
+    ]
   }
 }

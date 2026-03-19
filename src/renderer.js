@@ -70,10 +70,43 @@ const themes = {
 function updateCount() {
   countDisplay.textContent = `${panes.size} / ${MAX_PANES}`;
   const count = panes.size;
-  const cols = Math.ceil(Math.sqrt(count));
-  const rows = Math.ceil(count / cols) || 1;
-  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-  grid.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+  if (count === 0) {
+    grid.style.gridTemplateColumns = '1fr';
+    grid.style.gridTemplateRows = '1fr';
+    return;
+  }
+
+  // 12-column span system: choose cols (must divide 12: 1,2,3,4)
+  let cols;
+  if (count <= 1) cols = 1;
+  else if (count <= 4) cols = 2;
+  else if (count <= 9) cols = Math.min(4, Math.ceil(count / 2));
+  else cols = 4;
+  // Ensure cols divides 12
+  if (cols === 5 || cols === 6) cols = 4;
+
+  // Build row distribution
+  const fullRows = Math.floor(count / cols);
+  const remainder = count % cols;
+  const numRows = remainder > 0 ? fullRows + 1 : fullRows;
+
+  grid.style.gridTemplateColumns = 'repeat(12, 1fr)';
+  grid.style.gridTemplateRows = `repeat(${numRows}, 1fr)`;
+
+  // Assign grid-column spans to each pane
+  let paneIndex = 0;
+  const paneEls = [...panes.values()];
+  for (let row = 0; row < numRows; row++) {
+    const isLastRow = row === numRows - 1 && remainder > 0;
+    const panesInRow = isLastRow ? remainder : cols;
+    const span = 12 / panesInRow;
+    for (let col = 0; col < panesInRow; col++) {
+      if (paneIndex < paneEls.length) {
+        paneEls[paneIndex].element.style.gridColumn = `span ${span}`;
+        paneIndex++;
+      }
+    }
+  }
 }
 
 function renumberPanes() {
@@ -271,7 +304,7 @@ async function addTerminal() {
   // Close button
   closeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    removeTerminal(id);
+    removePane(id);
   });
 
   panes.set(id, { terminal, fitAddon, element: paneEl, pathLabel });
@@ -288,7 +321,7 @@ async function addTerminal() {
   }, 1500);
 }
 
-function removeTerminal(id) {
+function removePane(id) {
   const pane = panes.get(id);
   if (!pane) return;
 
@@ -298,6 +331,7 @@ function removeTerminal(id) {
 
   window.pty.destroy(id);
   pane.terminal.dispose();
+
   pane.element.remove();
   panes.delete(id);
 
@@ -336,27 +370,29 @@ function setTheme(theme) {
   for (const [, pane] of panes) {
     pane.terminal.options.theme = themes[theme];
   }
-  window.themeBridge.setNativeTheme(theme);
+  window.themeBridge?.setNativeTheme(theme);
 }
 
 // PTY -> xterm
-window.pty.onData((id, data) => {
-  const pane = panes.get(id);
-  if (pane) {
-    pane.terminal.write(data);
-  }
-});
+if (window.pty) {
+  window.pty.onData((id, data) => {
+    const pane = panes.get(id);
+    if (pane) {
+      pane.terminal.write(data);
+    }
+  });
 
-window.pty.onExit((id, exitCode) => {
-  removeTerminal(id);
-});
+  window.pty.onExit((id, exitCode) => {
+    removePane(id);
+  });
+}
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
   // F11: toggle fullscreen
   if (e.key === 'F11') {
     e.preventDefault();
-    window.windowControl.toggleFullscreen();
+    window.windowControl?.toggleFullscreen();
     setTimeout(fitAll, 200);
     return;
   }
@@ -364,7 +400,10 @@ document.addEventListener('keydown', (e) => {
   // Ctrl+backtick: send literal backtick to active terminal
   if (e.key === '`' && e.ctrlKey && !e.altKey && !e.metaKey) {
     e.preventDefault();
-    if (activeId) window.pty.write(activeId, '`');
+    if (activeId) {
+      const pane = panes.get(activeId);
+      if (pane) window.pty.write(activeId, '`');
+    }
     return;
   }
 
@@ -397,7 +436,7 @@ document.addEventListener('keydown', (e) => {
       return;
     }
     if (e.key === 'w' || e.key === 'W') {
-      if (activeId) removeTerminal(activeId);
+      if (activeId) removePane(activeId);
       return;
     }
     // 1-9 for panes 1-9
