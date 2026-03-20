@@ -5,7 +5,7 @@ const MAX_PANES = 16;
 const panes = new Map();
 let activeId = null;
 let nextId = 1;
-let currentTheme = localStorage.getItem('sptc-theme') || 'dark';
+let currentTheme = localStorage.getItem('creampuff-theme') || 'light';
 let backtickPending = false;
 let backtickTimer = null;
 let backtickHeld = false;
@@ -67,6 +67,26 @@ const themes = {
   },
 };
 
+// ── Recent directories manager ──
+function getRecentDirs() {
+  try {
+    return JSON.parse(localStorage.getItem('creampuff-recent-dirs')) || [];
+  } catch {
+    return [];
+  }
+}
+
+function addRecentDir(dir) {
+  const normalized = dir.replace(/\\/g, '/').toLowerCase();
+  let dirs = getRecentDirs().filter(
+    (d) => d.replace(/\\/g, '/').toLowerCase() !== normalized
+  );
+  dirs.unshift(dir);
+  if (dirs.length > 10) dirs = dirs.slice(0, 10);
+  localStorage.setItem('creampuff-recent-dirs', JSON.stringify(dirs));
+}
+
+// ── Grid / pane helpers ──
 function updateCount() {
   countDisplay.textContent = `${panes.size} / ${MAX_PANES}`;
   const count = panes.size;
@@ -76,16 +96,13 @@ function updateCount() {
     return;
   }
 
-  // 12-column span system: choose cols (must divide 12: 1,2,3,4)
   let cols;
   if (count <= 1) cols = 1;
   else if (count <= 4) cols = 2;
   else if (count <= 9) cols = Math.min(4, Math.ceil(count / 2));
   else cols = 4;
-  // Ensure cols divides 12
   if (cols === 5 || cols === 6) cols = 4;
 
-  // Build row distribution
   const fullRows = Math.floor(count / cols);
   const remainder = count % cols;
   const numRows = remainder > 0 ? fullRows + 1 : fullRows;
@@ -93,7 +110,6 @@ function updateCount() {
   grid.style.gridTemplateColumns = 'repeat(12, 1fr)';
   grid.style.gridTemplateRows = `repeat(${numRows}, 1fr)`;
 
-  // Assign grid-column spans to each pane
   let paneIndex = 0;
   const paneEls = [...panes.values()];
   for (let row = 0; row < numRows; row++) {
@@ -127,7 +143,7 @@ function setActive(id) {
   const pane = panes.get(id);
   if (pane) {
     pane.element.classList.add('active');
-    pane.terminal.focus();
+    if (pane.terminal) pane.terminal.focus();
   }
 }
 
@@ -136,12 +152,261 @@ function shortenPath(p) {
   return p.replace(/\\/g, '/').replace(/^C:\/Users\/[^/]+/, '~');
 }
 
-async function addTerminal() {
+// ── Directory picker overlay ──
+async function showDirectoryPicker(id, container, pathLabel) {
+  const homeDir = await window.appBridge.getHomeDir();
+  const recentDirs = getRecentDirs();
+
+  // Build directory list: home first, then recents (excluding home)
+  const homeNorm = homeDir.replace(/\\/g, '/').toLowerCase();
+  const dirs = [homeDir];
+  for (const d of recentDirs) {
+    if (d.replace(/\\/g, '/').toLowerCase() !== homeNorm) {
+      dirs.push(d);
+    }
+  }
+
+  let selectedIndex = 0;
+
+  // Build overlay DOM
+  const overlay = document.createElement('div');
+  overlay.className = 'dir-picker-overlay';
+
+  const card = document.createElement('div');
+  card.className = 'dir-picker-card';
+
+  const title = document.createElement('h3');
+  title.className = 'dir-picker-title';
+  title.textContent = 'Choose a directory';
+
+  const list = document.createElement('div');
+  list.className = 'dir-picker-list';
+
+  function renderItems() {
+    list.innerHTML = '';
+    dirs.forEach((dir, i) => {
+      const item = document.createElement('div');
+      item.className = 'dir-picker-item' + (i === selectedIndex ? ' selected' : '');
+
+      const pathSpan = document.createElement('span');
+      pathSpan.className = 'dir-picker-path';
+      pathSpan.textContent = shortenPath(dir);
+
+      item.appendChild(pathSpan);
+
+      if (i === 0) {
+        const badge = document.createElement('span');
+        badge.className = 'dir-picker-badge';
+        badge.textContent = 'home';
+        item.appendChild(badge);
+      }
+
+      item.addEventListener('click', () => confirmDir(dir));
+      list.appendChild(item);
+    });
+  }
+
+  const terminalBtn = document.createElement('button');
+  terminalBtn.className = 'dir-picker-browse';
+  terminalBtn.textContent = 'Terminal only (no Claude)';
+  terminalBtn.addEventListener('click', () => {
+    confirmDir(dirs[selectedIndex], false);
+  });
+
+  card.appendChild(title);
+  card.appendChild(list);
+  card.appendChild(terminalBtn);
+  overlay.appendChild(card);
+  container.appendChild(overlay);
+
+  renderItems();
+
+  function confirmDir(dir, runClaude = true) {
+    cleanup();
+    initTerminalInPane(id, dir, container, pathLabel, runClaude);
+  }
+
+  function onKeyDown(e) {
+    // Only handle if this pane's overlay is showing
+    if (!overlay.parentNode) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedIndex = (selectedIndex + 1) % dirs.length;
+      renderItems();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedIndex = (selectedIndex - 1 + dirs.length) % dirs.length;
+      renderItems();
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmDir(dirs[selectedIndex]);
+      return;
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      terminalBtn.focus();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (panes.size <= 1) {
+        // Only pane — select home
+        confirmDir(homeDir);
+      } else {
+        // Close pane
+        cleanup();
+        removePane(id);
+      }
+      return;
+    }
+  }
+
+  function cleanup() {
+    document.removeEventListener('keydown', onKeyDown, true);
+    if (overlay.parentNode) overlay.remove();
+  }
+
+  document.addEventListener('keydown', onKeyDown, true);
+}
+
+// ── Initialize terminal in pane (Phase 3) ──
+async function initTerminalInPane(id, cwd, container, pathLabel, runClaude = true) {
+  addRecentDir(cwd);
+
+  const terminal = new Terminal({
+    fontSize: 13,
+    fontFamily: "'Cascadia Code', 'Cascadia Mono', 'Consolas', monospace",
+    theme: themes[currentTheme],
+    cursorBlink: true,
+    allowProposedApi: true,
+    rightClickSelectsWord: true,
+  });
+
+  const fitAddon = new FitAddon();
+  terminal.loadAddon(fitAddon);
+  terminal.open(container);
+
+  terminal.onTitleChange((title) => {
+    if (pathLabel && title) {
+      pathLabel.textContent = shortenPath(title);
+    }
+  });
+
+  // Right-click context menu: copy selection or paste
+  container.addEventListener('contextmenu', async (e) => {
+    e.preventDefault();
+    const selection = terminal.getSelection();
+    if (selection) {
+      await navigator.clipboard.writeText(selection);
+      terminal.clearSelection();
+    } else {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        window.pty.write(id, text);
+      }
+    }
+  });
+
+  // Copy/paste key handlers
+  terminal.attachCustomKeyEventHandler((e) => {
+    if (e.type !== 'keydown') return true;
+
+    if (e.ctrlKey && e.shiftKey) {
+      if (e.key === 'C') {
+        const sel = terminal.getSelection();
+        if (sel) navigator.clipboard.writeText(sel);
+        return false;
+      }
+      if (e.key === 'V') {
+        navigator.clipboard.readText().then((text) => {
+          if (text) window.pty.write(id, text);
+        });
+        return false;
+      }
+    }
+
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
+      const sel = terminal.getSelection();
+      if (sel) {
+        navigator.clipboard.writeText(sel);
+        terminal.clearSelection();
+        return false;
+      }
+    }
+
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'v' || e.key === 'V')) {
+      navigator.clipboard.readText().then((text) => {
+        if (text) window.pty.write(id, text);
+      });
+      return false;
+    }
+
+    if (e.key === 'F11') {
+      return false;
+    }
+
+    if (e.key === '`') {
+      return false;
+    }
+
+    if (backtickPending) {
+      const k = e.key;
+      if (k === 't' || k === 'T' || k === 'w' || k === 'W' || k === 'e' || k === 'E') {
+        return false;
+      }
+      if ((k >= '1' && k <= '9') || k === '0') {
+        return false;
+      }
+      if (SHIFT_DIGIT_MAP[k] !== undefined) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  await new Promise((r) => setTimeout(r, 50));
+  fitAddon.fit();
+
+  const cols = terminal.cols;
+  const rows = terminal.rows;
+
+  const result = await window.pty.create(id, cols, rows, cwd);
+  if (result.cwd) {
+    pathLabel.textContent = shortenPath(result.cwd);
+  }
+
+  terminal.onData((data) => {
+    window.pty.write(id, data);
+  });
+
+  // Update pane record
+  const pane = panes.get(id);
+  if (pane) {
+    pane.terminal = terminal;
+    pane.fitAddon = fitAddon;
+  }
+
+  setActive(id);
+  requestAnimationFrame(() => fitAll());
+
+  if (runClaude) {
+    setTimeout(() => {
+      window.pty.write(id, 'claude\r');
+    }, 1500);
+  }
+}
+
+// ── Add terminal directly (no picker, for auto-start) ──
+async function addTerminalDirect(cwd, runClaude = false) {
   if (panes.size >= MAX_PANES) return;
 
   const id = nextId++;
-
-  // Create DOM
   const paneEl = document.createElement('div');
   paneEl.className = 'terminal-pane';
   paneEl.dataset.id = id;
@@ -178,125 +443,62 @@ async function addTerminal() {
   paneEl.appendChild(container);
   grid.appendChild(paneEl);
 
-  // Create xterm
-  const terminal = new Terminal({
-    fontSize: 13,
-    fontFamily: "'Cascadia Code', 'Cascadia Mono', 'Consolas', monospace",
-    theme: themes[currentTheme],
-    cursorBlink: true,
-    allowProposedApi: true,
-    rightClickSelectsWord: true,
+  paneEl.addEventListener('mousedown', () => setActive(id));
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    removePane(id);
   });
 
-  const fitAddon = new FitAddon();
-  terminal.loadAddon(fitAddon);
-  terminal.open(container);
+  panes.set(id, { terminal: null, fitAddon: null, element: paneEl, pathLabel });
+  updateCount();
+  renumberPanes();
+  setActive(id);
 
-  // Update path label when terminal title changes (set by prompt's OSC 0)
-  terminal.onTitleChange((title) => {
-    if (pathLabel && title) {
-      pathLabel.textContent = shortenPath(title);
-    }
-  });
+  requestAnimationFrame(() => fitAll());
+  initTerminalInPane(id, cwd, container, pathLabel, runClaude);
+}
 
-  // Right-click context menu: copy selection or paste
-  container.addEventListener('contextmenu', async (e) => {
-    e.preventDefault();
-    const selection = terminal.getSelection();
-    if (selection) {
-      await navigator.clipboard.writeText(selection);
-      terminal.clearSelection();
-    } else {
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        window.pty.write(id, text);
-      }
-    }
-  });
+// ── Add terminal (Phase 1 — creates pane DOM, shows picker) ──
+async function addTerminal() {
+  if (panes.size >= MAX_PANES) return;
 
-  // Copy/paste key handlers
-  terminal.attachCustomKeyEventHandler((e) => {
-    if (e.type !== 'keydown') return true;
+  const id = nextId++;
 
-    // Ctrl+Shift+C / Ctrl+Shift+V (classic terminal shortcuts)
-    if (e.ctrlKey && e.shiftKey) {
-      if (e.key === 'C') {
-        const sel = terminal.getSelection();
-        if (sel) navigator.clipboard.writeText(sel);
-        return false;
-      }
-      if (e.key === 'V') {
-        navigator.clipboard.readText().then((text) => {
-          if (text) window.pty.write(id, text);
-        });
-        return false;
-      }
-    }
+  const paneEl = document.createElement('div');
+  paneEl.className = 'terminal-pane';
+  paneEl.dataset.id = id;
 
-    // Ctrl+C: copy if selection exists, otherwise let terminal handle (SIGINT)
-    if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
-      const sel = terminal.getSelection();
-      if (sel) {
-        navigator.clipboard.writeText(sel);
-        terminal.clearSelection();
-        return false;
-      }
-    }
+  const header = document.createElement('div');
+  header.className = 'pane-header';
 
-    // Ctrl+V: always paste
-    if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'v' || e.key === 'V')) {
-      navigator.clipboard.readText().then((text) => {
-        if (text) window.pty.write(id, text);
-      });
-      return false;
-    }
+  const info = document.createElement('div');
+  info.className = 'pane-info';
 
-    // F11: let document handler handle fullscreen toggle
-    if (e.key === 'F11') {
-      return false;
-    }
+  const label = document.createElement('span');
+  label.className = 'pane-number';
+  label.textContent = id;
 
-    // Intercept backtick in all forms for chord system
-    if (e.key === '`') {
-      return false; // document keydown handles bare and Ctrl+backtick
-    }
+  const pathLabel = document.createElement('span');
+  pathLabel.className = 'pane-path';
+  pathLabel.textContent = '...';
 
-    // While backtick chord is pending, intercept second keys so xterm doesn't process them
-    if (backtickPending) {
-      const k = e.key;
-      if (k === 't' || k === 'T' || k === 'w' || k === 'W' || k === 'e' || k === 'E') {
-        return false;
-      }
-      // 1-9 for panes 1-9, 0 for pane 10
-      if ((k >= '1' && k <= '9') || k === '0') {
-        return false;
-      }
-      // Shift+1-6 (!@#$%^) for panes 11-16
-      if (SHIFT_DIGIT_MAP[k] !== undefined) {
-        return false;
-      }
-    }
+  info.appendChild(label);
+  info.appendChild(pathLabel);
 
-    return true;
-  });
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'pane-close';
+  closeBtn.innerHTML = '&#215;';
+  closeBtn.title = 'Close (`+W)';
 
-  // Small delay to let DOM settle before fitting
-  await new Promise((r) => setTimeout(r, 50));
-  fitAddon.fit();
+  header.appendChild(info);
+  header.appendChild(closeBtn);
 
-  const cols = terminal.cols;
-  const rows = terminal.rows;
+  const container = document.createElement('div');
+  container.className = 'terminal-container';
 
-  // Create PTY
-  const result = await window.pty.create(id, cols, rows);
-  if (result.cwd) {
-    pathLabel.textContent = shortenPath(result.cwd);
-  }
-
-  // xterm -> pty
-  terminal.onData((data) => {
-    window.pty.write(id, data);
-  });
+  paneEl.appendChild(header);
+  paneEl.appendChild(container);
+  grid.appendChild(paneEl);
 
   // Click to focus
   paneEl.addEventListener('mousedown', () => setActive(id));
@@ -307,30 +509,27 @@ async function addTerminal() {
     removePane(id);
   });
 
-  panes.set(id, { terminal, fitAddon, element: paneEl, pathLabel });
+  // Register pane with null terminal/fitAddon (picker phase)
+  panes.set(id, { terminal: null, fitAddon: null, element: paneEl, pathLabel });
   updateCount();
   renumberPanes();
   setActive(id);
 
-  // Refit all terminals after grid reflow
   requestAnimationFrame(() => fitAll());
 
-  // Auto-run claude code after shell initializes
-  setTimeout(() => {
-    window.pty.write(id, 'claude\r');
-  }, 1500);
+  // Show directory picker
+  showDirectoryPicker(id, container, pathLabel);
 }
 
 function removePane(id) {
   const pane = panes.get(id);
   if (!pane) return;
 
-  // Find the position index before removing, so we can select the replacement
   const keysBefore = [...panes.keys()];
   const closedIndex = keysBefore.indexOf(id);
 
   window.pty.destroy(id);
-  pane.terminal.dispose();
+  if (pane.terminal) pane.terminal.dispose();
 
   pane.element.remove();
   panes.delete(id);
@@ -341,7 +540,6 @@ function removePane(id) {
   if (activeId === id) {
     const remaining = [...panes.keys()];
     if (remaining.length > 0) {
-      // Select the pane that now occupies the same position, or the last one if we closed the last
       const newIndex = Math.min(closedIndex, remaining.length - 1);
       setActive(remaining[newIndex]);
     } else {
@@ -354,6 +552,7 @@ function removePane(id) {
 
 function fitAll() {
   for (const [id, pane] of panes) {
+    if (!pane.fitAddon) continue;
     try {
       pane.fitAddon.fit();
       window.pty.resize(id, pane.terminal.cols, pane.terminal.rows);
@@ -365,10 +564,10 @@ function fitAll() {
 
 function setTheme(theme) {
   currentTheme = theme;
-  localStorage.setItem('sptc-theme', theme);
+  localStorage.setItem('creampuff-theme', theme);
   document.documentElement.setAttribute('data-theme', theme);
   for (const [, pane] of panes) {
-    pane.terminal.options.theme = themes[theme];
+    if (pane.terminal) pane.terminal.options.theme = themes[theme];
   }
   window.themeBridge?.setNativeTheme(theme);
 }
@@ -377,7 +576,7 @@ function setTheme(theme) {
 if (window.pty) {
   window.pty.onData((id, data) => {
     const pane = panes.get(id);
-    if (pane) {
+    if (pane && pane.terminal) {
       pane.terminal.write(data);
     }
   });
@@ -389,7 +588,6 @@ if (window.pty) {
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
-  // F11: toggle fullscreen
   if (e.key === 'F11') {
     e.preventDefault();
     window.windowControl?.toggleFullscreen();
@@ -397,38 +595,33 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Ctrl+backtick: send literal backtick to active terminal
   if (e.key === '`' && e.ctrlKey && !e.altKey && !e.metaKey) {
     e.preventDefault();
     if (activeId) {
       const pane = panes.get(activeId);
-      if (pane) window.pty.write(activeId, '`');
+      if (pane && pane.terminal) window.pty.write(activeId, '`');
     }
     return;
   }
 
-  // Bare backtick: enter pending state (prefix key)
   if (e.key === '`' && !e.ctrlKey && !e.altKey && !e.metaKey) {
     e.preventDefault();
     backtickHeld = true;
-    if (backtickPending) return; // already pending, ignore repeat
+    if (backtickPending) return;
     backtickPending = true;
     clearTimeout(backtickTimer);
     backtickTimer = setTimeout(() => {
-      if (!backtickHeld) backtickPending = false; // timeout only if released
+      if (!backtickHeld) backtickPending = false;
     }, 1000);
     return;
   }
 
-  // While backtick is pending, handle second key
   if (backtickPending) {
-    // Ignore modifier-only keys (Shift, Ctrl, Alt, Meta) so they don't cancel the chord
     if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') {
       return;
     }
     e.preventDefault();
     clearTimeout(backtickTimer);
-    // Stay pending if backtick is still held, otherwise clear
     backtickPending = backtickHeld;
 
     if (e.key === 't' || e.key === 'T') {
@@ -439,7 +632,6 @@ document.addEventListener('keydown', (e) => {
       if (activeId) removePane(activeId);
       return;
     }
-    // 1-9 for panes 1-9
     if (e.key >= '1' && e.key <= '9') {
       const idx = parseInt(e.key) - 1;
       const ids = [...panes.keys()];
@@ -448,7 +640,6 @@ document.addEventListener('keydown', (e) => {
       }
       return;
     }
-    // 0 for pane 10
     if (e.key === '0') {
       const ids = [...panes.keys()];
       if (9 < ids.length) {
@@ -456,7 +647,6 @@ document.addEventListener('keydown', (e) => {
       }
       return;
     }
-    // Shift+1-6 (!@#$%^) for panes 11-16
     if (SHIFT_DIGIT_MAP[e.key] !== undefined) {
       const idx = SHIFT_DIGIT_MAP[e.key] - 1;
       const ids = [...panes.keys()];
@@ -469,7 +659,6 @@ document.addEventListener('keydown', (e) => {
       setTheme(currentTheme === 'dark' ? 'light' : 'dark');
       return;
     }
-    // Any other key: cancel pending, do nothing
     backtickPending = false;
     return;
   }
@@ -479,7 +668,6 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => {
   if (e.key === '`') {
     backtickHeld = false;
-    // Give a short grace period after release, then clear pending
     clearTimeout(backtickTimer);
     backtickTimer = setTimeout(() => {
       backtickPending = false;
@@ -497,5 +685,78 @@ window.addEventListener('resize', () => {
 // Apply persisted theme before first terminal
 setTheme(currentTheme);
 
-// Start with one terminal
+// Restore fullscreen state
+if (localStorage.getItem('creampuff-fullscreen') === 'true') {
+  window.windowControl?.setFullscreen(true);
+  setTimeout(fitAll, 300);
+}
+
+// Listen for fullscreen changes
+window.windowControl?.onFullscreenChanged((isFullScreen) => {
+  localStorage.setItem('creampuff-fullscreen', isFullScreen);
+});
+
+// Show server URL in toolbar
+window.serverBridge?.onUrl(({ port, token }) => {
+  const el = document.getElementById('server-url');
+  if (el) el.textContent = `mobile: :${port}`;
+});
+
+// ── Tunnel / QR ──
+const QRCode = require('qrcode');
+const tunnelStatus = document.getElementById('tunnel-status');
+const tunnelStopBtn = document.getElementById('tunnel-stop-btn');
+const serverUrlWrapper = document.getElementById('server-url-wrapper');
+const qrDropdown = document.getElementById('qr-dropdown');
+const qrCanvas = document.getElementById('qr-canvas');
+const qrUrlText = document.getElementById('qr-url');
+const qrCopyBtn = document.getElementById('qr-copy');
+let currentTunnelUrl = null;
+let qrRendered = false;
+
+function renderQr(url) {
+  qrUrlText.textContent = url;
+  QRCode.toCanvas(qrCanvas, url, { width: 180, margin: 2, color: { dark: '#09090b', light: '#ffffff' } });
+  qrRendered = true;
+}
+
+// Show/hide QR dropdown on hover
+serverUrlWrapper.addEventListener('mouseenter', () => {
+  if (currentTunnelUrl) {
+    if (!qrRendered) renderQr(currentTunnelUrl);
+    qrDropdown.classList.remove('hidden');
+  }
+});
+
+serverUrlWrapper.addEventListener('mouseleave', () => {
+  qrDropdown.classList.add('hidden');
+});
+
+window.tunnelBridge?.onUrl((url) => {
+  currentTunnelUrl = url;
+  qrRendered = false;
+  tunnelStatus.textContent = 'tunnel active';
+  tunnelStopBtn.classList.remove('hidden');
+});
+
+window.tunnelBridge?.onStopped(() => {
+  currentTunnelUrl = null;
+  qrRendered = false;
+  tunnelStatus.textContent = '';
+  tunnelStopBtn.classList.add('hidden');
+  qrDropdown.classList.add('hidden');
+});
+
+tunnelStopBtn.addEventListener('click', () => {
+  window.tunnelBridge?.stop();
+  tunnelStopBtn.classList.add('hidden');
+  tunnelStatus.textContent = '';
+  qrDropdown.classList.add('hidden');
+});
+
+qrCopyBtn.addEventListener('click', () => {
+  if (currentTunnelUrl) navigator.clipboard.writeText(currentTunnelUrl);
+});
+
+// Start with one terminal — show directory picker
 addTerminal();

@@ -1,10 +1,12 @@
 {
-  "name": "shu-cream",
-  "version": "1.0.0",
+  "name": "creampuff",
+  "version": "1.0.2",
   "description": "Multi-terminal app with auto-grid layout",
   "main": "main.js",
   "scripts": {
-    "build": "esbuild src/renderer.js --bundle --outfile=dist/renderer.js --platform=browser --format=iife && cp node_modules/@xterm/xterm/css/xterm.css dist/xterm.css",
+    "build:desktop": "esbuild src/renderer.js --bundle --outfile=dist/renderer.js --platform=browser --format=iife && cp node_modules/@xterm/xterm/css/xterm.css dist/xterm.css",
+    "build:mobile": "esbuild mobile/src/mobile.js --bundle --outfile=mobile/dist/mobile.js --platform=browser --format=iife",
+    "build": "npm run build:desktop && npm run build:mobile",
     "start": "npm run build && node node_modules/node-pty/scripts/post-install.js && electron .",
     "dist": "npm run build && electron-builder --win"
   },
@@ -14,7 +16,10 @@
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
-    "node-pty": "^1.1.0"
+    "ansi_up": "^6.0.6",
+    "node-pty": "^1.1.0",
+    "qrcode": "^1.5.4",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "electron": "^41.0.2",
@@ -22,22 +27,28 @@
     "esbuild": "^0.27.4"
   },
   "build": {
-    "appId": "com.sptc.multi-terminal",
-    "productName": "shu-cream",
+    "appId": "com.creampuff.terminal",
+    "productName": "creampuff",
     "win": {
       "target": "nsis",
+      "icon": "assets/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": true
     },
     "files": [
+      "assets/icon.ico",
       "main.js",
       "preload.js",
       "index.html",
       "styles.css",
       "dist/renderer.js",
       "dist/xterm.css",
+      "server.js",
+      "mobile/index.html",
+      "mobile/mobile.css",
+      "mobile/dist/mobile.js",
       "!dist/win-unpacked",
       "!dist/win-unpacked/**/*",
       "!dist/*.exe",

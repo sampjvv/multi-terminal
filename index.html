@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SPTC</title>
+  <title>creampuff</title>
   <link rel="stylesheet" href="dist/xterm.css">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -20,7 +20,19 @@
       <span><kbd>`+E</kbd> Theme</span>
       <span><kbd>F11</kbd> Fullscreen</span>
     </div>
-    <div id="toolbar-right"></div>
+    <div id="toolbar-right">
+      <span id="tunnel-status" style="font-size:11px;color:var(--fg-subtle);"></span>
+      <button id="tunnel-stop-btn" class="tunnel-btn hidden" title="Disable remote access">Disconnect</button>
+      <div id="server-url-wrapper">
+        <span id="server-url" style="font-size:11px;color:var(--fg-subtle);"></span>
+        <div id="qr-dropdown" class="hidden">
+          <h3>Scan to connect</h3>
+          <canvas id="qr-canvas"></canvas>
+          <p id="qr-url"></p>
+          <button id="qr-copy">Copy URL</button>
+        </div>
+      </div>
+    </div>
   </div>
   <div id="terminal-grid"></div>
   <script src="dist/renderer.js"></script>

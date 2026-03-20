@@ -213,5 +213,197 @@ body {
   flex: 1;
   overflow: hidden;
   padding: 2px;
+  position: relative;
+}
+
+/* ── Directory picker overlay ── */
+.dir-picker-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
+.dir-picker-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 320px;
+  max-width: 440px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.dir-picker-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 12px;
+}
+
+.dir-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.dir-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.1s;
+  border: 1px solid transparent;
+}
+
+.dir-picker-item:hover {
+  background: var(--accent-muted);
+}
+
+.dir-picker-item.selected {
+  background: var(--accent-muted);
+  border-color: var(--border-active);
+}
+
+.dir-picker-path {
+  font-family: 'Cascadia Code', 'Cascadia Mono', 'Consolas', monospace;
+  font-size: 13px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.dir-picker-badge {
+  font-size: 10px;
+  color: var(--fg-muted);
+  background: var(--accent-muted);
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.dir-picker-browse {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--btn-bg);
+  color: var(--fg);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.dir-picker-browse:hover,
+.dir-picker-browse:focus {
+  background: var(--btn-bg-hover);
+  outline: none;
+}
+
+/* ── Tunnel button ── */
+.tunnel-btn {
+  font-size: 11px;
+  font-family: inherit;
+  padding: 2px 8px;
+  background: var(--btn-bg);
+  color: var(--fg-muted);
+  border: 1px solid var(--btn-border);
+  border-radius: 4px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tunnel-btn:hover {
+  background: var(--btn-bg-hover);
+  color: var(--fg);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ── QR dropdown ── */
+#server-url-wrapper {
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+#server-url {
+  cursor: default;
+}
+
+#qr-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  width: 280px;
+  z-index: 100;
+  animation: qr-drop-in 0.15s ease-out;
+}
+
+@keyframes qr-drop-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#qr-dropdown h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 12px;
+}
+
+#qr-canvas {
+  display: block;
+  margin: 0 auto 10px;
+  border-radius: 6px;
+}
+
+#qr-url {
+  font-size: 10px;
+  color: var(--fg-muted);
+  word-break: break-all;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+#qr-dropdown button {
+  font-size: 11px;
+  font-family: inherit;
+  padding: 4px 12px;
+  background: var(--btn-bg);
+  color: var(--fg);
+  border: 1px solid var(--btn-border);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#qr-dropdown button:hover {
+  background: var(--btn-bg-hover);
 }
 

@@ -1,8 +1,15 @@
-const { app, BrowserWindow, ipcMain, clipboard, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, clipboard, nativeTheme, dialog } = require('electron');
 const path = require('path');
+const { spawn, execFileSync } = require('child_process');
 const pty = require('node-pty');
+const server = require('./server');
 
 let mainWindow;
+let serverPort = null;
+let tunnelProcess = null;
+let tunnelUrl = null;
+let authToken = null;
+let tunnelManualStop = false;
 const ptys = new Map();
 
 function createWindow() {
@@ -11,12 +18,13 @@ function createWindow() {
     height: 800,
     minWidth: 600,
     minHeight: 400,
-    title: 'SPTC',
-    backgroundColor: '#09090b',
+    title: 'creampuff',
+    icon: path.join(__dirname, 'assets', 'icon.ico'),
+    backgroundColor: '#fafafa',
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: '#09090b',
-      symbolColor: '#fafafa',
+      color: '#fafafa',
+      symbolColor: '#09090b',
       height: 36,
     },
     webPreferences: {
@@ -28,11 +36,131 @@ function createWindow() {
   });
 
   mainWindow.loadFile('index.html');
+
+  // Persist fullscreen state
+  mainWindow.on('enter-full-screen', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('window:fullscreenChanged', true);
+    }
+  });
+  mainWindow.on('leave-full-screen', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('window:fullscreenChanged', false);
+    }
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (serverPort) {
+      mainWindow.webContents.send('server:url', { port: serverPort, token: authToken });
+    }
+    if (tunnelUrl) {
+      mainWindow.webContents.send('tunnel:url', tunnelUrl);
+    }
+  });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(async () => {
+  createWindow();
+
+  // Auto-launch on startup
+  app.setLoginItemSettings({ openAtLogin: true });
+
+  // Start mobile remote access server
+  try {
+    const result = await server.start(3333, (id, data) => {
+      const p = ptys.get(id);
+      if (p) p.write(data);
+    }, (id, cols, rows) => {
+      const p = ptys.get(id);
+      if (p) p.resize(cols, rows);
+    });
+    serverPort = result.port;
+    authToken = result.token;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('server:url', { port: serverPort, token: authToken });
+    }
+    startTunnel();
+  } catch (err) {
+    console.error('Failed to start mobile server:', err);
+  }
+});
+
+function findCloudflared() {
+  try {
+    execFileSync('where', ['cloudflared'], { stdio: 'ignore' });
+    return 'cloudflared';
+  } catch {}
+  // Check common locations
+  const homeBin = path.join(process.env.USERPROFILE || process.env.HOME || '', 'bin', 'cloudflared.exe');
+  try {
+    require('fs').accessSync(homeBin);
+    return homeBin;
+  } catch {}
+  return null;
+}
+
+function startTunnel() {
+  if (tunnelProcess) return;
+  tunnelManualStop = false;
+
+  const cloudflaredPath = findCloudflared();
+  if (!cloudflaredPath) {
+    console.log('cloudflared not found — tunnel disabled (LAN-only mode)');
+    return;
+  }
+
+  tunnelProcess = spawn(cloudflaredPath, ['tunnel', '--url', `http://localhost:${serverPort}`], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  const handleOutput = (data) => {
+    const line = data.toString();
+    const match = line.match(/https:\/\/[a-zA-Z0-9-]+\.trycloudflare\.com/);
+    if (match) {
+      tunnelUrl = `${match[0]}/?token=${authToken}`;
+      // Write URL to temp file for debugging/remote access
+      const fs = require('fs');
+      const urlFile = path.join(require('os').tmpdir(), 'creampuff-tunnel-url.txt');
+      fs.writeFileSync(urlFile, tunnelUrl, 'utf8');
+      console.log('Tunnel URL:', tunnelUrl);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('tunnel:url', tunnelUrl);
+      }
+    }
+  };
+
+  tunnelProcess.stdout.on('data', handleOutput);
+  tunnelProcess.stderr.on('data', handleOutput);
+
+  tunnelProcess.on('exit', (code) => {
+    console.log(`cloudflared exited with code ${code}`);
+    tunnelProcess = null;
+    tunnelUrl = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('tunnel:stopped');
+    }
+    // Auto-restart after delay unless manually stopped or quitting
+    if (!tunnelManualStop && !app.isQuitting) {
+      setTimeout(startTunnel, 5000);
+    }
+  });
+}
+
+function stopTunnel() {
+  if (tunnelProcess) {
+    tunnelProcess.kill();
+    tunnelProcess = null;
+    tunnelUrl = null;
+  }
+}
+
+app.on('before-quit', () => {
+  app.isQuitting = true;
+});
 
 app.on('window-all-closed', () => {
+  stopTunnel();
+  server.stop();
   for (const [id, ptyProcess] of ptys) {
     ptyProcess.kill();
   }
@@ -40,9 +168,9 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
-ipcMain.handle('pty:create', (event, { id, cols, rows }) => {
+ipcMain.handle('pty:create', (event, { id, cols, rows, cwd }) => {
   const shell = 'powershell.exe';
-  const cwd = process.env.USERPROFILE || process.env.HOME;
+  const resolvedCwd = cwd || process.env.USERPROFILE || process.env.HOME;
 
   // Delete ALL Claude Code env vars to prevent nested-session detection
   const cleanEnv = { ...process.env };
@@ -59,27 +187,30 @@ ipcMain.handle('pty:create', (event, { id, cols, rows }) => {
     name: 'xterm-256color',
     cols: cols || 80,
     rows: rows || 24,
-    cwd,
+    cwd: resolvedCwd,
     env: cleanEnv,
     useConptyDll: true,
   });
 
   ptys.set(id, ptyProcess);
+  server.onPaneCreated(id, resolvedCwd);
 
   ptyProcess.onData((data) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('pty:data', { id, data });
     }
+    server.onPaneData(id, data);
   });
 
   ptyProcess.onExit(({ exitCode }) => {
     ptys.delete(id);
+    server.onPaneExited(id);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('pty:exit', { id, exitCode });
     }
   });
 
-  return { success: true, cwd };
+  return { success: true, cwd: resolvedCwd };
 });
 
 ipcMain.handle('pty:write', (event, { id, data }) => {
@@ -101,6 +232,7 @@ ipcMain.handle('pty:destroy', (event, { id }) => {
   if (ptyProcess) {
     ptyProcess.kill();
     ptys.delete(id);
+    server.onPaneExited(id);
   }
 });
 
@@ -125,6 +257,36 @@ ipcMain.handle('theme:set', (event, { theme }) => {
 ipcMain.handle('window:toggleFullscreen', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  }
+});
+
+ipcMain.handle('window:setFullscreen', (event, { fullscreen }) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setFullScreen(fullscreen);
+  }
+});
+
+ipcMain.handle('dialog:openDirectory', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory'],
+    title: 'Choose a directory',
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('app:getHomeDir', () => {
+  return process.env.USERPROFILE || process.env.HOME;
+});
+
+ipcMain.handle('tunnel:start', () => {
+  startTunnel();
+});
+
+ipcMain.handle('tunnel:stop', () => {
+  tunnelManualStop = true;
+  stopTunnel();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('tunnel:stopped');
   }
 });
 

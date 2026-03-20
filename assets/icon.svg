@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <!-- Shadow -->
+  <ellipse cx="128" cy="230" rx="70" ry="10" fill="#c4956a" opacity="0.3"/>
+  <!-- Bottom choux pastry -->
+  <ellipse cx="128" cy="160" rx="72" ry="48" fill="#d4a574"/>
+  <ellipse cx="128" cy="155" rx="72" ry="48" fill="#e0b88a"/>
+  <!-- Choux ridges -->
+  <path d="M60 150 Q75 135 95 148 Q110 130 128 148 Q146 130 161 148 Q181 135 196 150" stroke="#c4956a" stroke-width="2" fill="none" opacity="0.5"/>
+  <path d="M68 165 Q85 152 100 163 Q115 148 128 163 Q141 148 156 163 Q171 152 188 165" stroke="#c4956a" stroke-width="2" fill="none" opacity="0.4"/>
+  <!-- Cream filling — big generous layer -->
+  <path d="M52 138 Q65 110 90 130 Q105 105 128 128 Q151 105 166 130 Q191 110 204 138 Q210 155 200 162 Q128 180 56 162 Q46 155 52 138Z" fill="#fffdf0"/>
+  <path d="M55 136 Q68 112 92 128 Q108 108 128 126 Q148 108 164 128 Q188 112 201 136" stroke="#f0e0c0" stroke-width="1.5" fill="none"/>
+  <!-- Cream billows spilling out -->
+  <ellipse cx="60" cy="140" rx="14" ry="10" fill="#fffef8" opacity="0.9"/>
+  <ellipse cx="196" cy="140" rx="14" ry="10" fill="#fffef8" opacity="0.9"/>
+  <ellipse cx="90" cy="132" rx="10" ry="8" fill="#fffef8" opacity="0.7"/>
+  <ellipse cx="166" cy="132" rx="10" ry="8" fill="#fffef8" opacity="0.7"/>
+  <ellipse cx="128" cy="128" rx="12" ry="9" fill="#fffef8" opacity="0.6"/>
+  <!-- Cream drip on the left -->
+  <path d="M58 148 Q54 160 58 170 Q62 175 66 168 Q68 158 64 148Z" fill="#fffdf0" opacity="0.8"/>
+  <!-- Cream drip on the right -->
+  <path d="M198 148 Q202 160 198 170 Q194 175 190 168 Q188 158 192 148Z" fill="#fffdf0" opacity="0.8"/>
+  <!-- Top choux pastry (lid) -->
+  <ellipse cx="128" cy="118" rx="64" ry="36" fill="#e0b88a"/>
+  <ellipse cx="128" cy="112" rx="64" ry="36" fill="#ebb87a"/>
+  <path d="M68 108 Q85 95 105 108 Q118 90 128 105 Q138 90 151 108 Q171 95 188 108" stroke="#d4a060" stroke-width="2" fill="none" opacity="0.5"/>
+  <!-- Golden top highlight -->
+  <ellipse cx="120" cy="95" rx="30" ry="14" fill="#f0c88a" opacity="0.6"/>
+  <!-- Powdered sugar dots -->
+  <circle cx="100" cy="98" r="2.5" fill="white" opacity="0.8"/>
+  <circle cx="115" cy="90" r="2" fill="white" opacity="0.7"/>
+  <circle cx="130" cy="88" r="2.5" fill="white" opacity="0.8"/>
+  <circle cx="145" cy="92" r="2" fill="white" opacity="0.7"/>
+  <circle cx="158" cy="100" r="2.5" fill="white" opacity="0.7"/>
+  <circle cx="108" cy="105" r="1.5" fill="white" opacity="0.6"/>
+  <circle cx="140" cy="102" r="1.5" fill="white" opacity="0.6"/>
+  <circle cx="125" cy="96" r="3" fill="white" opacity="0.5"/>
+  <circle cx="152" cy="108" r="1.5" fill="white" opacity="0.5"/>
+  <circle cx="88" cy="106" r="2" fill="white" opacity="0.6"/>
+  <circle cx="170" cy="106" r="2" fill="white" opacity="0.5"/>
+</svg>

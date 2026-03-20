@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>creampuff mobile</title>
+  <link rel="stylesheet" href="/mobile.css">
+</head>
+<body>
+  <div id="status-strip">
+    <span id="status-dot"></span>
+    <span id="status-text">connecting...</span>
+  </div>
+  <div id="output-view"><pre id="output"></pre></div>
+  <div id="pane-indicator">
+    <div id="pane-path"></div>
+    <div id="pane-dots"></div>
+  </div>
+  <div id="input-bar">
+    <input id="cmd-input" type="text" placeholder="Type command..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button id="send-btn" title="Send">&#9166;</button>
+  </div>
+  <div id="shortcut-bar">
+    <button class="sk" data-key="ctrl-c">Ctrl+C</button>
+    <button class="sk" data-key="tab">Tab</button>
+    <button class="sk" data-key="up">&uarr;</button>
+    <button class="sk" data-key="down">&darr;</button>
+    <button class="sk" data-key="esc">Esc</button>
+    <button id="theme-btn" class="sk">Theme</button>
+  </div>
+  <script src="/dist/mobile.js"></script>
+</body>
+</html>
