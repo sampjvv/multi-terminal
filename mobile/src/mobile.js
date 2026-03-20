@@ -15,9 +15,6 @@ let userScrolledUp = false;
 const paneBuffers = new Map();  // id -> string
 
 const MAX_BUFFER = 150000;      // trim to this when exceeded
-let ansiUp = new AnsiUp();
-ansiUp.use_classes = false;
-
 // DOM
 const statusDot  = document.getElementById('status-dot');
 const paneSelect = document.getElementById('pane-select');
@@ -115,6 +112,8 @@ function renderTerminal(buf) {
   function ensureRow(row) { while (rows.length <= row) rows.push([]); }
   function ensureCol(row, col) { ensureRow(row); while (rows[row].length <= col) rows[row].push(' '); }
 
+  let dim = false;  // SGR 2 (dim/faint) — used for ghost text
+
   let i = 0;
   while (i < buf.length) {
     const ch = buf[i];
@@ -139,7 +138,19 @@ function renderTerminal(buf) {
           c = (nums.length > 1 ? nums[1] || 1 : 1) - 1;
           break;
         case 'J':
-          if (nums[0] === 2 || nums[0] === 3) { rows.length = 0; r = 0; c = 0; }
+          if (nums[0] === 0 || params === '') {
+            // Erase from cursor to end of screen
+            ensureRow(r);
+            rows[r].splice(c);
+            rows.splice(r + 1);
+          } else if (nums[0] === 1) {
+            // Erase from start to cursor
+            for (let ri = 0; ri < r; ri++) rows[ri] = [];
+            ensureRow(r); ensureCol(r, c);
+            for (let ci = 0; ci <= c; ci++) rows[r][ci] = ' ';
+          } else if (nums[0] === 2 || nums[0] === 3) {
+            rows.length = 0; r = 0; c = 0;
+          }
           break;
         case 'K':
           ensureRow(r);
@@ -147,7 +158,11 @@ function renderTerminal(buf) {
           else if (nums[0] === 1) { ensureCol(r, c); for (let j = 0; j <= c; j++) rows[r][j] = ' '; }
           else if (nums[0] === 2) rows[r] = [];
           break;
-        // m (SGR), h/l (mode set/reset), etc. — ignore
+        case 'm':
+          if (nums[0] === 2) dim = true;
+          else if (nums[0] === 0) dim = false;
+          else if (nums[0] === 22) dim = false;
+          break;
       }
     } else if (ch === '\x1b' && buf[i + 1] === ']') {
       // OSC sequence (window title, etc.) — skip until BEL or ST
@@ -162,8 +177,10 @@ function renderTerminal(buf) {
     } else if (ch === '\t') {
       c = (Math.floor(c / 8) + 1) * 8; i++;
     } else if (ch.charCodeAt(0) >= 32) {
-      ensureRow(r); ensureCol(r, c);
-      rows[r][c] = ch;
+      if (!dim) {
+        ensureRow(r); ensureCol(r, c);
+        rows[r][c] = ch;
+      }
       c++; i++;
     } else {
       i++; // skip other control chars
@@ -176,10 +193,7 @@ function renderTerminal(buf) {
 // ── Claude Code output filter ──
 // Operates on clean screen text from renderTerminal().
 // Extracts ●-prefixed blocks (response + continuation lines).
-// Returns null if buffer is not a Claude session.
 function filterClaudeText(text) {
-  if (!text.includes('●')) return null;
-
   const lines = text.split('\n');
   const out = [];
   let capturing = false;
@@ -221,13 +235,12 @@ function renderOutput() {
     return;
   }
   const buf = getBuffer(activePane);
-
-  // Try Claude-mode: render terminal → filter ● blocks → show as plain text
   const screen = renderTerminal(buf);
-  const filtered = filterClaudeText(screen);
 
-  if (filtered !== null) {
-    output.innerHTML = collapseSeparators(escapeHtml(filtered));
+  // Detect Claude session from rendered text (escape-free, reliable)
+  if (screen.includes('Claude') || screen.includes('●')) {
+    const filtered = filterClaudeText(screen);
+    output.innerHTML = '<b>ClaudeCode</b>\n' + collapseSeparators(escapeHtml(filtered));
   } else {
     // Normal terminal: use ansi_up for colors
     const fresh = new AnsiUp();
@@ -238,14 +251,7 @@ function renderOutput() {
 }
 
 function appendOutput(data) {
-  // If buffer has ● (Claude session), do full re-render through terminal emulator
-  if (getBuffer(activePane).includes('●')) {
-    renderOutput();
-  } else {
-    const html = ansiUp.ansi_to_html(data);
-    output.insertAdjacentHTML('beforeend', collapseSeparators(html));
-    if (!userScrolledUp) scrollToBottom();
-  }
+  renderOutput();
 }
 
 // ═══════════════════════════════════════
@@ -352,9 +358,6 @@ clearBtn.addEventListener('click', () => {
   if (activePane != null) {
     paneBuffers.set(activePane, '');
     output.innerHTML = '';
-    // Reset ansi_up parser state (mid-sequence tracking, etc.)
-    ansiUp = new AnsiUp();
-    ansiUp.use_classes = false;
   }
 });
 
