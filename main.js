@@ -1,8 +1,22 @@
 const { app, BrowserWindow, ipcMain, clipboard, nativeTheme, dialog } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { spawn, execFileSync } = require('child_process');
+const crypto = require('crypto');
 const pty = require('node-pty');
 const server = require('./server');
+
+function getOrCreateAuthKey() {
+  const keyPath = path.join(app.getPath('userData'), 'auth-key.txt');
+  try {
+    const key = fs.readFileSync(keyPath, 'utf8').trim();
+    if (key.length >= 32) return key;
+  } catch {}
+  const key = crypto.randomBytes(16).toString('hex');
+  fs.mkdirSync(path.dirname(keyPath), { recursive: true });
+  fs.writeFileSync(keyPath, key, 'utf8');
+  return key;
+}
 
 let mainWindow;
 let serverPort = null;
@@ -65,15 +79,16 @@ app.whenReady().then(async () => {
   // Auto-launch on startup
   app.setLoginItemSettings({ openAtLogin: true });
 
-  // Start mobile remote access server
+  // Start mobile remote access server with persistent auth key
   try {
+    const persistentKey = getOrCreateAuthKey();
     const result = await server.start(3333, (id, data) => {
       const p = ptys.get(id);
       if (p) p.write(data);
     }, (id, cols, rows) => {
       const p = ptys.get(id);
       if (p) p.resize(cols, rows);
-    });
+    }, persistentKey);
     serverPort = result.port;
     authToken = result.token;
     if (mainWindow && !mainWindow.isDestroyed()) {

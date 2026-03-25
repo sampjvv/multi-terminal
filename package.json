@@ -4,10 +4,12 @@
   "description": "Multi-terminal app with auto-grid layout",
   "main": "main.js",
   "scripts": {
-    "build:desktop": "esbuild src/renderer.js --bundle --outfile=dist/renderer.js --platform=browser --format=iife && cp node_modules/@xterm/xterm/css/xterm.css dist/xterm.css",
+    "build:desktop": "esbuild src/renderer.js --bundle --outfile=dist/renderer.js --platform=browser --format=iife && node -e \"require('fs').copyFileSync('node_modules/@xterm/xterm/css/xterm.css','dist/xterm.css')\"",
     "build:mobile": "esbuild mobile/src/mobile.js --bundle --outfile=mobile/dist/mobile.js --platform=browser --format=iife",
+    "watch:mobile": "esbuild mobile/src/mobile.js --bundle --outfile=mobile/dist/mobile.js --platform=browser --format=iife --watch",
     "build": "npm run build:desktop && npm run build:mobile",
-    "start": "npm run build && node node_modules/node-pty/scripts/post-install.js && electron .",
+    "start": "npm run build && electron .",
+    "postinstall": "node node_modules/node-pty/scripts/post-install.js",
     "dist": "npm run build && electron-builder --win"
   },
   "keywords": [],

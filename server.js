@@ -19,25 +19,28 @@ const MIME = {
 };
 
 function requestHandler(req, res) {
-  let filePath;
   const parsed = new URL(req.url, 'http://localhost');
   const url = parsed.pathname;
+
+  // Auth check for root/index
   if (url === '/' || url === '/index.html') {
     if (parsed.searchParams.get('token') !== authToken) {
       res.writeHead(403);
       res.end('Forbidden');
       return;
     }
-    filePath = path.join(__dirname, 'mobile', 'index.html');
-  } else if (url === '/mobile.css') {
-    filePath = path.join(__dirname, 'mobile', 'mobile.css');
-  } else if (url === '/dist/mobile.js') {
-    filePath = path.join(__dirname, 'mobile', 'dist', 'mobile.js');
-  } else {
-    res.writeHead(404);
-    res.end('Not found');
+  }
+
+  // Map URL to mobile/ directory
+  let relPath = url === '/' ? '/index.html' : url;
+  // Prevent directory traversal
+  const normalized = path.normalize(relPath).replace(/\\/g, '/');
+  if (normalized.includes('..')) {
+    res.writeHead(403);
+    res.end('Forbidden');
     return;
   }
+  const filePath = path.join(__dirname, 'mobile', normalized);
 
   const ext = path.extname(filePath);
   fs.readFile(filePath, (err, data) => {
@@ -113,10 +116,10 @@ function createServer() {
   });
 }
 
-async function start(port, onWrite, onResize) {
+async function start(port, onWrite, onResize, persistentKey) {
   writeCallback = onWrite;
   resizeCallback = onResize;
-  authToken = crypto.randomBytes(32).toString('hex');
+  authToken = persistentKey || crypto.randomBytes(32).toString('hex');
 
   for (let p = port; p < port + 11; p++) {
     createServer();

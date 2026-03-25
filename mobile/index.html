@@ -3,31 +3,54 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>creampuff mobile</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>creampuff</title>
   <link rel="stylesheet" href="/mobile.css">
 </head>
 <body>
-  <div id="status-strip">
+  <!-- Header -->
+  <div id="header">
     <span id="status-dot"></span>
-    <span id="status-text">connecting...</span>
-  </div>
-  <div id="output-view"><pre id="output"></pre></div>
-  <div id="pane-indicator">
-    <div id="pane-path"></div>
+    <select id="pane-select"></select>
     <div id="pane-dots"></div>
+    <button id="clear-btn" class="hdr-btn" title="Clear output">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+        <line x1="10" y1="11" x2="10" y2="17"/>
+        <line x1="14" y1="11" x2="14" y2="17"/>
+      </svg>
+    </button>
   </div>
+
+  <!-- Terminal output -->
+  <div id="output"></div>
+
+  <!-- Scroll to bottom -->
+  <button id="scroll-btn" class="hidden" title="Scroll to bottom">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+
+  <!-- Action bar -->
+  <div id="action-bar">
+    <button id="interrupt-btn" title="Interrupt">Ctrl+C</button>
+    <div id="mode-toggle" class="hidden">
+      <button id="mode-btn" title="Toggle plan/code mode">
+        <span id="mode-label">plan</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Input bar -->
   <div id="input-bar">
-    <input id="cmd-input" type="text" placeholder="Type command..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-    <button id="send-btn" title="Send">&#9166;</button>
+    <input id="input" type="text" placeholder="Type here..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button id="send" title="Send">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
   </div>
-  <div id="shortcut-bar">
-    <button class="sk" data-key="ctrl-c">Ctrl+C</button>
-    <button class="sk" data-key="tab">Tab</button>
-    <button class="sk" data-key="up">&uarr;</button>
-    <button class="sk" data-key="down">&darr;</button>
-    <button class="sk" data-key="esc">Esc</button>
-    <button id="theme-btn" class="sk">Theme</button>
-  </div>
+
   <script src="/dist/mobile.js"></script>
 </body>
 </html>

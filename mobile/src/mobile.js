@@ -16,15 +16,22 @@ const paneBuffers = new Map();  // id -> string
 
 const MAX_BUFFER = 150000;      // trim to this when exceeded
 // DOM
-const statusDot  = document.getElementById('status-dot');
-const paneSelect = document.getElementById('pane-select');
-const paneDots   = document.getElementById('pane-dots');
-const clearBtn   = document.getElementById('clear-btn');
-const output     = document.getElementById('output');
-const scrollBtn  = document.getElementById('scroll-btn');
-const quickKeys  = document.getElementById('quick-keys');
-const inputEl    = document.getElementById('input');
-const sendBtn    = document.getElementById('send');
+const statusDot    = document.getElementById('status-dot');
+const paneSelect   = document.getElementById('pane-select');
+const paneDots     = document.getElementById('pane-dots');
+const clearBtn     = document.getElementById('clear-btn');
+const output       = document.getElementById('output');
+const scrollBtn    = document.getElementById('scroll-btn');
+const interruptBtn = document.getElementById('interrupt-btn');
+const modeToggle   = document.getElementById('mode-toggle');
+const modeBtn      = document.getElementById('mode-btn');
+const modeLabel    = document.getElementById('mode-label');
+const inputEl      = document.getElementById('input');
+const sendBtn      = document.getElementById('send');
+
+// Track Claude session state per render
+let isClaudeSession = false;
+let currentMode = '';  // 'plan' or 'code'
 
 // ═══════════════════════════════════════
 // Pane Selector
@@ -112,7 +119,7 @@ function renderTerminal(buf) {
   function ensureRow(row) { while (rows.length <= row) rows.push([]); }
   function ensureCol(row, col) { ensureRow(row); while (rows[row].length <= col) rows[row].push(' '); }
 
-  let dim = false;  // SGR 2 (dim/faint) — used for ghost text
+  let dim = false;  // SGR 2 (dim/faint) tracking
 
   let i = 0;
   while (i < buf.length) {
@@ -177,10 +184,8 @@ function renderTerminal(buf) {
     } else if (ch === '\t') {
       c = (Math.floor(c / 8) + 1) * 8; i++;
     } else if (ch.charCodeAt(0) >= 32) {
-      if (!dim) {
-        ensureRow(r); ensureCol(r, c);
-        rows[r][c] = ch;
-      }
+      ensureRow(r); ensureCol(r, c);
+      rows[r][c] = ch;
       c++; i++;
     } else {
       i++; // skip other control chars
@@ -192,7 +197,7 @@ function renderTerminal(buf) {
 
 // ── Claude Code output filter ──
 // Operates on clean screen text from renderTerminal().
-// Extracts ●-prefixed blocks (response + continuation lines).
+// Extracts ●-prefixed (response) and ❯-prefixed (prompt) blocks + continuations.
 function filterClaudeText(text) {
   const lines = text.split('\n');
   const out = [];
@@ -201,8 +206,12 @@ function filterClaudeText(text) {
     if (line.includes('●')) {
       capturing = true;
       out.push(line);
+    } else if (/^> \S/.test(line)) {
+      // User prompt: "> something" (not the empty input ">")
+      capturing = true;
+      out.push(line);
     } else if (capturing) {
-      if (line.trim() === '' || /^\s{2,}/.test(line)) {
+      if (line.trim() === '' || /^\s{2,}/.test(line) || line.includes('⎿')) {
         out.push(line);
       } else {
         capturing = false;
@@ -238,14 +247,33 @@ function renderOutput() {
   const screen = renderTerminal(buf);
 
   // Detect Claude session from rendered text (escape-free, reliable)
-  if (screen.includes('Claude') || screen.includes('●')) {
+  isClaudeSession = screen.includes('Claude') || screen.includes('●');
+
+  if (isClaudeSession) {
     const filtered = filterClaudeText(screen);
-    output.innerHTML = '<b>ClaudeCode</b>\n' + collapseSeparators(escapeHtml(filtered));
+    const styledLines = escapeHtml(filtered).split('\n').map(line => {
+      if (/^&gt; \S/.test(line)) return '<span class="claude-prompt">' + line + '</span>';
+      return line;
+    }).join('\n');
+    output.innerHTML = '<b>ClaudeCode</b>\n' + collapseSeparators(styledLines);
+
+    // Detect current mode from status bar
+    if (screen.includes('bypass permissions')) {
+      currentMode = 'bypass';
+    } else if (screen.includes('accept edits')) {
+      currentMode = 'edits';
+    } else if (screen.includes('plan mode')) {
+      currentMode = 'plan';
+    } else {
+      currentMode = 'default';
+    }
+    updateActionBar();
   } else {
     // Normal terminal: use ansi_up for colors
     const fresh = new AnsiUp();
     fresh.use_classes = false;
     output.innerHTML = collapseSeparators(fresh.ansi_to_html(buf));
+    updateActionBar();
   }
   if (!userScrolledUp) scrollToBottom();
 }
@@ -345,11 +373,31 @@ inputEl.addEventListener('keydown', (e) => {
 
 sendBtn.addEventListener('click', sendCommand);
 
-// Quick key buttons
-quickKeys.addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-key]');
-  if (!btn) return;
-  sendInput(btn.dataset.key);
+// Action bar
+function updateActionBar() {
+  // Interrupt button label
+  interruptBtn.textContent = isClaudeSession ? 'Interrupt' : 'Ctrl+C';
+
+  // Mode toggle: only visible in Claude sessions
+  modeToggle.classList.toggle('hidden', !isClaudeSession);
+  if (isClaudeSession) {
+    const labels = { bypass: 'dangerously skip permissions', edits: 'code', plan: 'plan', default: 'suggest' };
+    modeLabel.textContent = labels[currentMode] || 'suggest';
+    modeBtn.className = 'mode-' + currentMode;
+  }
+}
+
+interruptBtn.addEventListener('click', () => {
+  if (isClaudeSession) {
+    sendInput('\x1b');  // Escape — soft interrupt
+  } else {
+    sendInput('\x03');  // Ctrl+C
+  }
+  inputEl.focus();
+});
+
+modeBtn.addEventListener('click', () => {
+  sendInput('\x1b[Z');  // Shift+Tab — cycle mode
   inputEl.focus();
 });
 
